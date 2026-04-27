@@ -17,8 +17,55 @@ export default function Randevu() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  
+  const getLocalISODate = (date: Date) => {
+    const offset = date.getTimezoneOffset() * 60000;
+    return new Date(date.getTime() - offset).toISOString().split('T')[0];
+  };
+
+  const getDaysArray = () => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const firstDay = new Date(year, month, 1).getDay();
+    const startOffset = firstDay === 0 ? 6 : firstDay - 1; 
+    
+    const days = [];
+    for (let i = 0; i < startOffset; i++) days.push(null);
+    for (let i = 1; i <= daysInMonth; i++) days.push(new Date(year, month, i));
+    return days;
+  };
+  
+  const todayDate = new Date();
+  todayDate.setHours(0,0,0,0);
+
+  const getFilteredTimeSlots = () => {
+    if (!selectedDate) return [];
+    const now = new Date();
+    const todayStr = getLocalISODate(now);
+    
+    if (selectedDate === todayStr) {
+      const currentHour = now.getHours();
+      const currentMin = now.getMinutes();
+      
+      return availableSlots.filter(time => {
+        const [hourStr, minStr] = time.split(':');
+        const hour = parseInt(hourStr, 10);
+        const min = parseInt(minStr, 10);
+        
+        if (hour < currentHour) return false;
+        if (hour === currentHour && min <= currentMin) return false;
+        return true;
+      });
+    }
+    return availableSlots;
+  };
+
+  const filteredSlots = getFilteredTimeSlots();
+
   useEffect(() => {
-    fetch('http://127.0.0.1:8000/api/services/')
+    fetch('/api/services')
       .then(res => res.json())
       .then(data => setServices(data))
       .catch(err => console.error(err));
@@ -28,7 +75,7 @@ export default function Randevu() {
     if (selectedDate) {
       setAvailableSlots([]);
       setSelectedTime('');
-      fetch(`http://127.0.0.1:8000/api/appointments/available-slots/?date=${selectedDate}`)
+      fetch(`/api/appointments/available-slots?date=${selectedDate}`)
         .then(res => res.json())
         .then(data => setAvailableSlots(data.available_slots || []))
         .catch(err => console.error(err));
@@ -47,7 +94,7 @@ export default function Randevu() {
     }
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/appointments/', {
+      const res = await fetch('/api/appointments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -147,33 +194,92 @@ export default function Randevu() {
           <div className="space-y-6 animate-in fade-in">
             <h2 className="text-xl font-medium text-white mb-6 uppercase tracking-wider">Tarih ve Saat</h2>
             <div>
-              <label className="block text-gray-400 mb-2 font-medium">Tarih Seçimi</label>
-              <input 
-                type="date" 
-                min={new Date().toISOString().split('T')[0]}
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-full bg-dark-950 border border-gray-700 text-white p-3 rounded-sm focus:border-gold-500 focus:outline-none"
-              />
+              <label className="block text-gray-400 mb-4 font-medium uppercase tracking-wider text-sm">Tarih Seçimi</label>
+              
+              <div className="bg-dark-950 border border-gray-800 rounded-sm p-4 md:p-6 shadow-inner">
+                <div className="flex justify-between items-center mb-6">
+                  <button 
+                    onClick={() => {
+                        const prev = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1);
+                        if (prev.getMonth() >= todayDate.getMonth() || prev.getFullYear() > todayDate.getFullYear()) {
+                            setCurrentMonth(prev);
+                        }
+                    }}
+                    className="w-8 h-8 flex items-center justify-center hover:bg-gray-800 rounded-sm transition-colors text-gray-400 disabled:opacity-20"
+                    disabled={currentMonth.getMonth() === todayDate.getMonth() && currentMonth.getFullYear() === todayDate.getFullYear()}
+                    type="button"
+                  >
+                    &#10094;
+                  </button>
+                  <span className="font-bold text-gold-500 uppercase tracking-widest text-sm md:text-base">
+                    {currentMonth.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}
+                  </span>
+                  <button 
+                    onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}
+                    className="w-8 h-8 flex items-center justify-center hover:bg-gray-800 rounded-sm transition-colors text-gray-400"
+                    type="button"
+                  >
+                    &#10095;
+                  </button>
+                </div>
+                
+                <div className="grid grid-cols-7 gap-1 mb-2 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">
+                  {['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'].map(d => <div key={d} className="pb-2">{d}</div>)}
+                </div>
+                
+                <div className="grid grid-cols-7 gap-1 md:gap-2">
+                  {getDaysArray().map((day, idx) => {
+                    if (!day) return <div key={`empty-${idx}`} className="p-2"></div>;
+                    
+                    const isPast = day < todayDate;
+                    const dateStr = getLocalISODate(day);
+                    const isSelected = selectedDate === dateStr;
+                    
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        disabled={isPast}
+                        onClick={() => {
+                          setSelectedDate(dateStr);
+                          setSelectedTime(''); // Reset time when date changes
+                        }}
+                        className={`p-2 md:p-3 w-full flex items-center justify-center rounded-sm text-sm font-medium transition-all duration-200
+                          ${isPast ? 'text-gray-700 cursor-not-allowed opacity-50' : 
+                            isSelected ? 'bg-gold-500 text-dark-950 font-bold scale-105 shadow-[0_0_10px_rgba(212,175,55,0.3)]' : 
+                            'text-gray-300 hover:bg-gold-500/10 hover:text-gold-500 hover:border-gold-500/30 border border-transparent'}`}
+                      >
+                        {day.getDate()}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
             
             {selectedDate && (
-              <div>
-                <label className="block text-gray-400 mb-2 font-medium">Saat Seçimi (10:00 - 20:00)</label>
-                {availableSlots.length > 0 ? (
-                  <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
-                    {availableSlots.map(time => (
-                      <div 
+              <div className="mt-8">
+                <label className="block text-gray-400 mb-4 font-medium uppercase tracking-wider text-sm">Saat Seçimi <span className="text-xs text-gray-500 lowercase">(10:00 - 20:00)</span></label>
+                {filteredSlots.length > 0 ? (
+                  <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                    {filteredSlots.map(time => (
+                      <button 
+                        type="button"
                         key={time}
                         onClick={() => setSelectedTime(time)}
-                        className={`text-center py-2 border rounded-sm cursor-pointer transition-colors ${selectedTime === time ? 'bg-gold-500 text-dark-950 font-bold border-gold-500' : 'border-gray-700 text-gray-300 hover:border-gold-500/50'}`}
+                        className={`text-center py-3 border rounded-sm cursor-pointer transition-all duration-200 text-sm tracking-widest font-medium
+                          ${selectedTime === time 
+                            ? 'bg-gold-500 text-dark-950 border-gold-500 shadow-[0_0_10px_rgba(212,175,55,0.3)]' 
+                            : 'bg-dark-950 border-gray-700 text-gray-300 hover:border-gold-500/50 hover:bg-gold-500/5'}`}
                       >
                         {time}
-                      </div>
+                      </button>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-yellow-500 p-3 bg-yellow-500/10 border border-yellow-500/20 text-sm">Seçili gün için uygun randevu saati bulunamadı veya mesai saatleri dışındasınız.</p>
+                  <div className="bg-dark-950 border border-gray-800 rounded-sm p-8 text-center">
+                    <p className="text-gray-400 text-sm">Bu gün için uygun randevu saati bulunmuyor veya mesai saatleri dışındasınız.</p>
+                  </div>
                 )}
               </div>
             )}

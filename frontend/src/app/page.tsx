@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import Image from 'next/image';
+import { supabase } from '@/utils/supabase';
 
 export default async function Home() {
   let services = [];
   try {
-    const res = await fetch('http://127.0.0.1:8000/api/services/', { next: { revalidate: 60 } });
-    if (res.ok) {
-        services = await res.json();
+    const { data, error } = await supabase.from('services').select('*').order('id', { ascending: true });
+    if (!error && data) {
+        services = data;
     }
   } catch (err) {
     console.error("Failed to fetch services", err);
@@ -49,7 +50,7 @@ export default async function Home() {
                </Link>
              </div>
              <div className="relative h-[400px]">
-               <Image src="https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=2070&auto=format&fit=crop" alt="Barber Details" fill className="object-cover rounded-sm border border-gold-500/20" />
+               <Image src="/gallery/1.jpeg" alt="Barber Details" fill className="object-cover object-[center_65%] rounded-sm border border-gold-500/20" />
                <div className="absolute -inset-4 border border-gold-500/30 rounded-sm -z-10 translate-x-4 translate-y-4"></div>
              </div>
            </div>
