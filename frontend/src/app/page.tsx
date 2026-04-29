@@ -5,7 +5,7 @@ import { supabase } from '@/utils/supabase';
 export default async function Home() {
   let services = [];
   try {
-    const { data, error } = await supabase.from('services').select('*').order('id', { ascending: true });
+    const { data, error } = await supabase.from('services').select('*').gt('price', 0); 
     if (!error && data) {
         services = data;
     }
