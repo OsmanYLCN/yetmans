@@ -68,7 +68,9 @@ export default function PanelPage() {
     }
     
     const url = `https://wa.me/${waPhone}?text=${encodeURIComponent(message)}`;
-    window.open(url, '_blank');
+    
+    // BURAYI DEĞİŞTİRDİK: Mobil tarayıcıların engelleyemeyeceği kesin yöntem
+    window.location.href = url;
   };
 
   const updateStatus = async (id: number, status: string, phone: string, firstName: string, date: string, time: string) => {
