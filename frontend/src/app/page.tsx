@@ -2,6 +2,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { supabase } from '@/utils/supabase';
 
+export const revalidate = 0;
+
 export default async function Home() {
   let services = [];
   try {
