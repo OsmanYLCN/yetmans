@@ -233,6 +233,7 @@ export default function Randevu() {
                     if (!day) return <div key={`empty-${idx}`} className="p-2"></div>;
                     
                     const isPast = day < todayDate;
+                    const isSunday = day.getDay() === 0; // Pazar gününü tespit ediyoruz
                     const dateStr = getLocalISODate(day);
                     const isSelected = selectedDate === dateStr;
                     
@@ -240,13 +241,13 @@ export default function Randevu() {
                       <button
                         key={idx}
                         type="button"
-                        disabled={isPast}
+                        disabled={isPast || isSunday} // Geçmiş VEYA Pazar ise kapatıyoruz
                         onClick={() => {
                           setSelectedDate(dateStr);
                           setSelectedTime(''); 
                         }}
                         className={`p-2 md:p-3 w-full flex items-center justify-center rounded-sm text-sm font-medium transition-all duration-200
-                          ${isPast ? 'text-gray-700 cursor-not-allowed opacity-50' : 
+                          ${(isPast || isSunday) ? 'text-gray-700 cursor-not-allowed opacity-50 bg-dark-950/50' : 
                             isSelected ? 'bg-gold-500 text-dark-950 font-bold scale-105 shadow-[0_0_10px_rgba(212,175,55,0.3)]' : 
                             'text-gray-300 hover:bg-gold-500/10 hover:text-gold-500 hover:border-gold-500/30 border border-transparent'}`}
                       >

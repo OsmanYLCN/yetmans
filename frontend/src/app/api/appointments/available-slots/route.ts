@@ -8,15 +8,21 @@ export async function GET(request: Request) {
   if (!dateStr) {
     return NextResponse.json({ error: "Date parameter is required" }, { status: 400 });
   }
+
+  // Tarihi güvenli bir şekilde oluşturup gününü buluyoruz (0: Pazar, 1-5: Hafta içi)
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const dateObj = new Date(year, month - 1, day);
+  const dayOfWeek = dateObj.getDay();
+  
+  const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+  const otoMolalar = ['10:00', '11:30', '12:30', '14:30', '16:30', '18:30'];
   
   // 10:00 to 20:00, 30 min intervals
   const slots: string[] = [];
   let currentHour = 10;
   let currentMin = 0;
   
-  // Döngüyü 20:00'ı kapsayacak şekilde güncelledik
   while (currentHour <= 20) {
-    // 20:30 olmasını istemediğimiz için bu şartı koyduk
     if (currentHour === 20 && currentMin === 30) break;
 
     const hh = String(currentHour).padStart(2, '0');
@@ -31,21 +37,44 @@ export async function GET(request: Request) {
     }
   }
   
-  // Fetch booked appointments for the date
-  const { data: bookedAppointments, error } = await supabase
+  // Sadece dolu olanları değil, patronun açtığı 'unblocked' istisnaları da çekiyoruz
+  const { data: dbAppointments, error } = await supabase
     .from('appointments')
-    .select('time')
+    .select('time, status')
     .eq('date', dateStr)
-    .in('status', ['pending', 'confirmed']);
+    .in('status', ['pending', 'confirmed', 'unblocked']);
     
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
   
-  // Supabase 'time' type returns "HH:MM:SS" string
-  const bookedTimes = bookedAppointments.map(appt => appt.time.substring(0, 5));
+  // Gerçekten dolu veya manuel kapatılmış saatler
+  const bookedTimes = dbAppointments
+    .filter(appt => appt.status === 'pending' || appt.status === 'confirmed')
+    .map(appt => appt.time.substring(0, 5));
+
+  // Patronun otomatik molayı kırmak için manuel "Geri Aç"tığı saatler
+  const unblockedTimes = dbAppointments
+    .filter(appt => appt.status === 'unblocked')
+    .map(appt => appt.time.substring(0, 5));
   
-  const availableSlots = slots.filter(slot => !bookedTimes.includes(slot));
+  // Sihirli Filtreleme İşlemi
+  const availableSlots = slots.filter(slot => {
+    // 1. Veritabanında normal randevu veya manuel mola (confirmed/pending) varsa KAPALI
+    if (bookedTimes.includes(slot)) return false;
+
+    // 2. Hafta içi otomatik mola saatine denk geliyorsa
+    if (isWeekday && otoMolalar.includes(slot)) {
+      // Eğer patron bu saati "Geri Aç" (unblocked) yapmadıysa KAPALI
+      if (!unblockedTimes.includes(slot)) {
+        return false; 
+      }
+      // Geri açtıysa müsait kalmaya devam eder
+    }
+
+    // 3. Hiçbir engele takılmayanlar AÇIK olarak kalır
+    return true;
+  });
   
   return NextResponse.json({ available_slots: availableSlots });
 }

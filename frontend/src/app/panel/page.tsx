@@ -16,20 +16,19 @@ export default function PanelPage() {
   const supabase = createClient();
 
   const timeSlots: string[] = [];
-  for (let h = 10; h <= 20; h++) { // Küçüktür yerine Küçük Eşittir (<= 20) yaptık
+  for (let h = 10; h <= 20; h++) { 
     timeSlots.push(`${String(h).padStart(2, '0')}:00`);
-    if (h !== 20) { // 20:30'u eklemesin diye bu şartı koyduk
+    if (h !== 20) { 
       timeSlots.push(`${String(h).padStart(2, '0')}:30`);
     }
   }
 
   useEffect(() => {
     fetchAppointments();
-  }, []);
+  }, [selectedDate]);
 
   const fetchAppointments = async () => {
     try {
-      // MUTLAK CACHE KIRICI: URL sonuna milisaniye ekledik
       const timestamp = new Date().getTime();
       const res = await fetch(`/api/admin/appointments?t=${timestamp}`, {
         cache: 'no-store',
@@ -68,8 +67,6 @@ export default function PanelPage() {
     }
     
     const url = `https://wa.me/${waPhone}?text=${encodeURIComponent(message)}`;
-    
-    // BURAYI DEĞİŞTİRDİK: Mobil tarayıcıların engelleyemeyeceği kesin yöntem
     window.location.href = url;
   };
 
@@ -95,34 +92,57 @@ export default function PanelPage() {
     }
   };
 
-  const handleBlockSlot = async (time: string) => {
+  const cancelAppointment = async (id: number, phone: string, firstName: string, date: string, time: string) => {
+    if (!confirm(`DİKKAT: ${firstName} adlı müşterinin onaylı randevusunu iptal etmek istediğinize emin misiniz? Bu işlem saati geri açacaktır.`)) return;
+    
+    try {
+      const res = await fetch(`/api/admin/appointments?id=${id}`, {
+        method: "DELETE",
+      });
+
+      if (res.ok) {
+        fetchAppointments(); 
+        const waPhone = formatPhoneForWA(phone);
+        const message = `Merhaba ${firstName}, Yetman's Barbershop'tan ${date} saat ${time} için oluşturduğunuz randevunuz elimizde olmayan sebeplerden dolayı iptal edilmek zorunda kalınmıştır. Anlayışınız için teşekkür ederiz.`;
+        
+        const url = `https://wa.me/${waPhone}?text=${encodeURIComponent(message)}`;
+        window.location.href = url; 
+      } else {
+        alert("İptal işlemi sırasında bir hata oluştu.");
+      }
+    } catch (error) {
+      alert("Randevu iptal edilemedi.");
+    }
+  };
+
+  const handleBlockSlot = async (time: string, dbApptId?: number) => {
     if (!confirm(`${time} saatini dışarıya kapatmak istediğinize emin misiniz?`)) return;
     try {
-      // 1. ADIM: Sistemdeki geçerli bir hizmet ID'sini otomatik bul
-      const { data: services } = await supabase.from('services').select('id').limit(1);
-      const validServiceId = services && services.length > 0 ? services[0].id : null;
+      if (dbApptId) {
+        await fetch(`/api/admin/appointments?id=${dbApptId}`, { method: "DELETE" });
+      } else {
+        const { data: services } = await supabase.from('services').select('id').limit(1);
+        const validServiceId = services && services.length > 0 ? services[0].id : null;
 
-      if (!validServiceId) {
-        alert("Hata: Sistemde hiç hizmet (saç kesimi vb.) bulunamadı. Lütfen önce hizmet ekleyin.");
-        return;
+        if (!validServiceId) {
+          alert("Hata: Sistemde hiç hizmet (saç kesimi vb.) bulunamadı. Lütfen önce hizmet ekleyin.");
+          return;
+        }
+
+        const { error } = await supabase
+          .from('appointments')
+          .insert([{
+            service_id: validServiceId, 
+            first_name: '🔴 MOLA',
+            last_name: 'KAPALI',
+            phone: '0000000000',
+            date: selectedDate,
+            time: `${time}:00`, 
+            status: 'confirmed' 
+          }]);
+
+        if (error) throw error;
       }
-
-      // 2. ADIM: O geçerli ID ile saati kapat
-      const { error } = await supabase
-        .from('appointments')
-        .insert([{
-          service_id: 4, 
-          first_name: '🔴 MOLA',
-          last_name: 'KAPALI',
-          phone: '0000000000',
-          date: selectedDate,
-          time: `${time}:00`, 
-          status: 'confirmed' 
-        }]);
-
-      if (error) throw error;
-      
-      // Başarılı olursa listeyi yenile
       fetchAppointments(); 
     } catch (error: any) { 
       console.error("Saat kapatma detayı:", error);
@@ -130,22 +150,40 @@ export default function PanelPage() {
     }
   };
 
-  const handleUnblockSlot = async (id: number) => {
-  if (!confirm("Bu molayı kaldırıp saati geri açmak istediğinize emin misiniz?")) return;
-  try {
-    const res = await fetch(`/api/admin/appointments?id=${id}`, {
-      method: "DELETE",
-    });
+  const handleUnblockSlot = async (id: number | null, time: string, isOtoMola: boolean) => {
+    if (!confirm("Bu molayı kaldırıp saati geri açmak istediğinize emin misiniz?")) return;
+    try {
+      if (isOtoMola) {
+        const { data: services } = await supabase.from('services').select('id').limit(1);
+        // Senin orijinal kodundaki gibi garanti olsun diye 4'ü de yedek (fallback) olarak koyduk
+        const validServiceId = services && services.length > 0 ? services[0].id : 4; 
 
-    if (res.ok) {
+        const { error } = await supabase.from('appointments').insert([{
+          service_id: validServiceId,
+          first_name: '🟢 AÇIK',
+          last_name: 'MOLA İPTALİ',
+          phone: '0000000000',
+          date: selectedDate,
+          time: `${time}:00`,
+          status: 'unblocked'
+        }]);
+
+        // EĞER HATA VARSA ARTIK GİZLENMEYECEK, YÜZÜMÜZE ÇARPILACAK
+        if (error) {
+          alert("Supabase Veritabanı Hatası: " + error.message);
+          return;
+        }
+      } else if (id) {
+        const res = await fetch(`/api/admin/appointments?id=${id}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) throw new Error("Hata oluştu.");
+      }
       fetchAppointments();
-    } else {
-      alert("Hata oluştu.");
+    } catch (error) {
+      alert("Beklenmeyen bir hata oluştu.");
     }
-  } catch (error) {
-    alert("Mola kaldırılamadı.");
-  }
-};
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -153,8 +191,13 @@ export default function PanelPage() {
   };
 
   const changeDate = (days: number) => {
-    const d = new Date(selectedDate);
+    const d = new Date(`${selectedDate}T12:00:00`);
     d.setDate(d.getDate() + days);
+    
+    if (d.getDay() === 0) {
+      d.setDate(d.getDate() + (days > 0 ? 1 : -1));
+    }
+    
     setSelectedDate(getLocalISODate(d));
   };
 
@@ -164,7 +207,14 @@ export default function PanelPage() {
 
   const appointmentsForDate = appointments.filter((a: any) => a.date === selectedDate && a.status !== 'rejected');
   
-  const displayDate = new Date(selectedDate).toLocaleDateString('tr-TR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const [displayYil, displayAy, displayGun] = selectedDate.split('-').map(Number);
+  const displayDate = new Date(displayYil, displayAy - 1, displayGun).toLocaleDateString('tr-TR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+  // GÜVENLİ GÜN HESAPLAMASI (Öğlen 12:00 baz alınır)
+  const dateObjForDay = new Date(`${selectedDate}T12:00:00`);
+  const dayOfWeek = dateObjForDay.getDay();
+  const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+  const otoMolalar = ['10:00', '11:30', '12:30', '14:30', '16:30', '18:30'];
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
@@ -195,7 +245,14 @@ export default function PanelPage() {
           <input 
             type="date" 
             value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
+            onChange={(e) => {
+              const selectedObj = new Date(`${e.target.value}T12:00:00`);
+              if (selectedObj.getDay() === 0) {
+                alert("Pazar günleri randevuya ve işleme kapalıdır.");
+                return;
+              }
+              setSelectedDate(e.target.value);
+            }}
             className="bg-dark-950 border border-gray-700 text-gray-300 text-sm rounded-sm p-2 focus:border-gold-500 focus:outline-none"
           />
         </div>
@@ -209,55 +266,82 @@ export default function PanelPage() {
       </div>
 
       <div className="bg-dark-950 border border-gray-800 rounded-sm overflow-hidden shadow-lg">
-        {timeSlots.map((time, index) => {
-          const appt = appointmentsForDate.find((a: any) => a.time.substring(0, 5) === time);
+        {timeSlots.map((time) => {
           
-          const isMola = appt?.first_name === '🔴 MOLA';
+          // ZEKİ FİLTRE: Gerçek randevular ve İstisnaları birbirine karıştırmadan ayırıyoruz
+          const realAppts = appointmentsForDate.filter((a: any) => a.time.substring(0, 5) === time && a.status !== 'unblocked' && a.first_name !== '🔴 MOLA' && a.first_name !== '🟢 AÇIK');
+          const activeAppt = realAppts.length > 0 ? realAppts[0] : null;
+
+          const markerAppts = appointmentsForDate.filter((a: any) => a.time.substring(0, 5) === time && (a.status === 'unblocked' || a.first_name === '🔴 MOLA' || a.first_name === '🟢 AÇIK'));
+          const markerAppt = markerAppts.length > 0 ? markerAppts[0] : null;
+
+          let isUnblockedMola = markerAppt?.status === 'unblocked' || markerAppt?.first_name === '🟢 AÇIK';
+          let isManualMola = markerAppt?.first_name === '🔴 MOLA';
+          let isOtoMola = false;
+
+          // Eğer o saatte gerçek randevu veya patronun koyduğu bir engel/istisna yoksa otomatiği çalıştır
+          if (!activeAppt && !markerAppt && isWeekday && otoMolalar.includes(time)) {
+            isOtoMola = true;
+          }
+
+          const showAsMola = isManualMola || isOtoMola;
           
           return (
-            <div key={time} className={`flex flex-col md:flex-row border-b border-gray-800/50 last:border-0 transition-colors hover:bg-dark-900/50 ${appt ? (appt.status === 'pending' ? 'bg-yellow-500/5' : isMola ? 'bg-red-900/10' : 'bg-green-500/5') : ''}`}>
+            <div key={time} className={`flex flex-col md:flex-row border-b border-gray-800/50 last:border-0 transition-colors hover:bg-dark-900/50 ${activeAppt ? (activeAppt.status === 'pending' ? 'bg-yellow-500/5' : 'bg-green-500/5') : showAsMola ? 'bg-red-900/10' : ''}`}>
+              
               <div className="w-full md:w-32 py-4 px-6 flex items-center justify-center md:justify-start border-b md:border-b-0 md:border-r border-gray-800/50">
-                <span className={`text-lg font-bold tracking-widest ${appt ? (isMola ? 'text-red-500' : 'text-white') : 'text-gray-600'}`}>
+                <span className={`text-lg font-bold tracking-widest ${showAsMola ? 'text-red-500' : activeAppt ? 'text-white' : 'text-gray-600'}`}>
                   {time}
                 </span>
               </div>
               
               <div className="flex-1 p-4 md:p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                {appt ? (
-                  isMola ? (
-                    <div className="flex justify-between items-center w-full bg-red-900/20 border border-red-500/30 p-3 rounded-sm">
-                      <span className="text-red-400 font-bold uppercase tracking-widest text-sm">🔴 Bu Saat Randevuya Kapatıldı</span>
-                      <button 
-                        onClick={() => handleUnblockSlot(appt.id)}
-                        className="px-3 py-1 bg-red-600/20 text-red-400 border border-red-500 hover:bg-red-500 hover:text-white transition-colors text-xs uppercase font-bold rounded-sm ml-4"
-                      >
-                        Geri Aç
-                      </button>
-                    </div>
-                  ) : (
+                {showAsMola ? (
+                  <div className="flex justify-between items-center w-full bg-red-900/20 border border-red-500/30 p-3 rounded-sm">
+                    <span className="text-red-400 font-bold uppercase tracking-widest text-sm">
+                      {isOtoMola ? '🔴 OTOMATİK MOLA (KAPALI)' : '🔴 BU SAAT RANDEVUYA KAPATILDI'}
+                    </span>
+                    <button 
+                      onClick={() => handleUnblockSlot(markerAppt?.id || null, time, isOtoMola)}
+                      className="px-3 py-1 bg-red-600/20 text-red-400 border border-red-500 hover:bg-red-500 hover:text-white transition-colors text-xs uppercase font-bold rounded-sm ml-4"
+                    >
+                      Geri Aç
+                    </button>
+                  </div>
+                ) : activeAppt ? (
                     <>
                       <div>
                         <div className="flex flex-wrap items-center gap-3 mb-2">
-                          <h3 className="font-bold text-lg text-white capitalize">{appt.first_name} {appt.last_name}</h3>
-                          {appt.status === 'pending' && <span className="bg-yellow-500/10 border border-yellow-500/50 text-yellow-500 text-[10px] px-2 py-0.5 uppercase font-bold tracking-widest rounded-full">Onay Bekliyor</span>}
-                          {appt.status === 'confirmed' && <span className="bg-green-500/10 border border-green-500/50 text-green-500 text-[10px] px-2 py-0.5 uppercase font-bold tracking-widest rounded-full">Onaylı</span>}
+                          <h3 className="font-bold text-lg text-white capitalize">{activeAppt.first_name} {activeAppt.last_name}</h3>
+                          {activeAppt.status === 'pending' && <span className="bg-yellow-500/10 border border-yellow-500/50 text-yellow-500 text-[10px] px-2 py-0.5 uppercase font-bold tracking-widest rounded-full">Onay Bekliyor</span>}
+                          {activeAppt.status === 'confirmed' && (
+                            <div className="flex items-center gap-3">
+                              <span className="bg-green-500/10 border border-green-500/50 text-green-500 text-[10px] px-2 py-0.5 uppercase font-bold tracking-widest rounded-full">Onaylı</span>
+                              <button 
+                                onClick={() => cancelAppointment(activeAppt.id, activeAppt.phone, activeAppt.first_name, activeAppt.date, activeAppt.time)}
+                                className="px-3 py-1 bg-red-600/10 text-red-500 border border-red-600 hover:bg-red-600 hover:text-white transition-colors uppercase font-bold text-[10px] tracking-wider rounded-sm flex items-center justify-center"
+                              >
+                                İptal Et
+                              </button>
+                            </div>
+                          )}
                         </div>
                         <div className="text-gray-400 text-sm flex flex-col sm:flex-row sm:gap-4 gap-1">
-                          <span className="flex items-center gap-1">✂️ {appt.service?.name}</span>
-                          <span className="flex items-center gap-1">📞 {appt.phone}</span>
+                          <span className="flex items-center gap-1">✂️ {activeAppt.service?.name}</span>
+                          <span className="flex items-center gap-1">📞 {activeAppt.phone}</span>
                         </div>
                       </div>
 
-                      {appt.status === 'pending' && (
+                      {activeAppt.status === 'pending' && (
                         <div className="flex gap-2 w-full md:w-auto mt-4 md:mt-0">
                           <button 
-                            onClick={() => updateStatus(appt.id, 'confirmed', appt.phone, appt.first_name, appt.date, appt.time)}
+                            onClick={() => updateStatus(activeAppt.id, 'confirmed', activeAppt.phone, activeAppt.first_name, activeAppt.date, activeAppt.time)}
                             className="flex-1 md:flex-none px-4 py-2 bg-green-600/10 text-green-500 border border-green-600 hover:bg-green-600 hover:text-white transition-colors uppercase font-bold text-[11px] tracking-wider rounded-sm flex items-center justify-center"
                           >
                             Onayla
                           </button>
                           <button 
-                            onClick={() => updateStatus(appt.id, 'rejected', appt.phone, appt.first_name, appt.date, appt.time)}
+                            onClick={() => updateStatus(activeAppt.id, 'rejected', activeAppt.phone, activeAppt.first_name, activeAppt.date, activeAppt.time)}
                             className="flex-1 md:flex-none px-4 py-2 bg-red-600/10 text-red-500 border border-red-600 hover:bg-red-600 hover:text-white transition-colors uppercase font-bold text-[11px] tracking-wider rounded-sm flex items-center justify-center"
                           >
                             Reddet
@@ -265,12 +349,13 @@ export default function PanelPage() {
                         </div>
                       )}
                     </>
-                  )
                 ) : (
                   <div className="flex items-center justify-between w-full h-full text-gray-600">
-                    <span className="italic uppercase tracking-widest text-sm">Boş Seans</span>
+                    <span className="italic uppercase tracking-widest text-sm">
+                      {isUnblockedMola ? '🟢 İSTİSNA (GERİ AÇILDI) - BOŞ SEANS' : 'BOŞ SEANS'}
+                    </span>
                     <button 
-                      onClick={() => handleBlockSlot(time)}
+                      onClick={() => handleBlockSlot(time, isUnblockedMola ? markerAppt?.id : undefined)}
                       className="px-3 py-1 border border-gray-700 hover:border-gray-500 hover:text-white transition-colors text-xs uppercase font-bold rounded-sm ml-4"
                     >
                       Saati Kapat

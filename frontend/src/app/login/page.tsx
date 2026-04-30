@@ -35,7 +35,12 @@ export default async function LoginPage({
             name="password"
             required
           />
-          
+          <div className="mt-4 text-center text-sm">
+            <Link href="/forgot-password" className="text-gray-400 hover:text-white underline">
+              Şifremi Unuttum
+            </Link>
+          </div>
+
           <button
             formAction={login}
             className="bg-gold-500 text-dark-950 font-bold tracking-widest uppercase rounded-sm px-4 py-3 mb-2 hover:bg-gold-400 transition-colors"
