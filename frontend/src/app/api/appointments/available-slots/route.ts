@@ -14,12 +14,13 @@ export async function GET(request: Request) {
   let currentHour = 10;
   let currentMin = 0;
   
-  while (currentHour < 20 || (currentHour === 20 && currentMin === 0)) {
+  // Döngüyü 20:00'ı kapsayacak şekilde güncelledik
+  while (currentHour <= 20) {
+    // 20:30 olmasını istemediğimiz için bu şartı koyduk
+    if (currentHour === 20 && currentMin === 30) break;
+
     const hh = String(currentHour).padStart(2, '0');
     const mm = String(currentMin).padStart(2, '0');
-    
-    // We stop at 19:30 as the last slot just like Django's logic
-    if (currentHour === 20 && currentMin === 0) break;
     
     slots.push(`${hh}:${mm}`);
     

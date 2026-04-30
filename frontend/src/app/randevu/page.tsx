@@ -75,7 +75,8 @@ export default function Randevu() {
     if (selectedDate) {
       setAvailableSlots([]);
       setSelectedTime('');
-      fetch(`/api/appointments/available-slots?date=${selectedDate}`)
+      // Cache'i kırmak için timestamp eklendi ki randevular güncel gelsin
+      fetch(`/api/appointments/available-slots?date=${selectedDate}&t=${new Date().getTime()}`)
         .then(res => res.json())
         .then(data => setAvailableSlots(data.available_slots || []))
         .catch(err => console.error(err));
@@ -131,7 +132,7 @@ export default function Randevu() {
         <h2 className="text-3xl font-bold text-white mb-4">Randevu Talebiniz Alınmıştır!</h2>
         <div className="bg-dark-900 border border-gold-500/30 p-6 rounded-sm text-gray-300 max-w-xl mx-auto">
           <p className="font-semibold text-gold-500 mb-2">Önemli Bilgilendirme</p>
-          <p>Onay işlemleri haftanın her günü <span className="text-white font-bold">10:00 - 20:00</span> mesai saatleri içerisinde yapılmaktadır.</p>
+          <p>Onay işlemleri haftanın her günü <span className="text-white font-bold">10:00 - 20:30</span> mesai saatleri içerisinde yapılmaktadır.</p>
           <p className="mt-2">Randevunuz onaylandığında WhatsApp üzerinden bildirim alacaksınız.</p>
         </div>
         <Link href="/" className="inline-block mt-8 px-6 py-3 bg-gold-500 text-dark-950 font-bold tracking-widest uppercase hover:bg-gold-400 transition-colors">
@@ -242,7 +243,7 @@ export default function Randevu() {
                         disabled={isPast}
                         onClick={() => {
                           setSelectedDate(dateStr);
-                          setSelectedTime(''); // Reset time when date changes
+                          setSelectedTime(''); 
                         }}
                         className={`p-2 md:p-3 w-full flex items-center justify-center rounded-sm text-sm font-medium transition-all duration-200
                           ${isPast ? 'text-gray-700 cursor-not-allowed opacity-50' : 
@@ -259,7 +260,7 @@ export default function Randevu() {
             
             {selectedDate && (
               <div className="mt-8">
-                <label className="block text-gray-400 mb-4 font-medium uppercase tracking-wider text-sm">Saat Seçimi <span className="text-xs text-gray-500 lowercase">(10:00 - 20:00)</span></label>
+                <label className="block text-gray-400 mb-4 font-medium uppercase tracking-wider text-sm">Saat Seçimi <span className="text-xs text-gray-500 lowercase">(10:00 - 20:30)</span></label>
                 {filteredSlots.length > 0 ? (
                   <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                     {filteredSlots.map(time => (

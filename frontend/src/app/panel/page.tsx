@@ -16,9 +16,11 @@ export default function PanelPage() {
   const supabase = createClient();
 
   const timeSlots: string[] = [];
-  for (let h = 10; h < 20; h++) {
+  for (let h = 10; h <= 20; h++) { // Küçüktür yerine Küçük Eşittir (<= 20) yaptık
     timeSlots.push(`${String(h).padStart(2, '0')}:00`);
-    timeSlots.push(`${String(h).padStart(2, '0')}:30`);
+    if (h !== 20) { // 20:30'u eklemesin diye bu şartı koyduk
+      timeSlots.push(`${String(h).padStart(2, '0')}:30`);
+    }
   }
 
   useEffect(() => {
